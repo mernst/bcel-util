@@ -44,7 +44,7 @@ import org.checkerframework.dataflow.qual.Pure;
  *
  * <p>This class cannot be a set of static methods (like {@link BcelUtil}) as it maintains state
  * during the client's processing of a method that must be available on a per thread basis. Thus it
- * is an abstract class extended by {@link org.plumelib.bcelutil.InstructionListUtils}. A client
+ * is an abstract class extended by {@code org.plumelib.bcelutil.InstructionListUtils}. A client
  * would not normally extend this class directly.
  */
 @SuppressWarnings("nullness")
@@ -71,7 +71,7 @@ public abstract class StackMapUtils {
 
   /**
    * The pool for the method currently being processed. Must be set by the client. See the sample
-   * code in {@link InstructionListUtils} for when and how to set this value.
+   * code in {@code InstructionListUtils} for when and how to set this value.
    */
   protected @Nullable ConstantPoolGen pool = null;
 
