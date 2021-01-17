@@ -24,7 +24,6 @@ import org.apache.bcel.generic.MethodGen;
 import org.apache.bcel.generic.ObjectType;
 import org.apache.bcel.generic.RET;
 import org.apache.bcel.generic.Type;
-import org.apache.bcel.verifier.VerificationResult;
 import org.checkerframework.checker.index.qual.IndexOrLow;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.interning.qual.InternedDistinct;
@@ -74,9 +73,6 @@ public abstract class StackMapUtils {
    * code in {@link InstructionListUtils} for when and how to set this value.
    */
   protected @Nullable ConstantPoolGen pool = null;
-
-  /** A log to which to print debugging information about program instrumentation. */
-  protected SimpleLog debug_instrument = new SimpleLog(false);
 
   /** Whether or not the current method needs a StackMap; set by set_current_stack_map_table. */
   protected boolean needStackMap = false;
@@ -397,6 +393,7 @@ public abstract class StackMapUtils {
     // Set up inital state of StackMap info on entry to method.
     int locals_offset_height = 0;
     int byte_code_offset = -1;
+    @SuppressWarnings("UnusedVariable")
     LocalVariableGen new_lvg;
     int min_size = 3; // only sizes are 1 or 2; start with something larger.
 
@@ -472,13 +469,6 @@ public abstract class StackMapUtils {
                   offset,
                   il.findHandle(live_start),
                   il.findHandle(byte_code_offset));
-          debug_instrument.log(
-              "Added local  %s, %d, %d : %s, %s%n",
-              new_lvg.getIndex(),
-              new_lvg.getStart().getPosition(),
-              new_lvg.getEnd().getPosition(),
-              new_lvg.getName(),
-              new_lvg.getType());
           min_size = Math.min(min_size, live_type.getSize());
           // reset to look for more temps at same offset
           live_start = 0;
@@ -493,13 +483,6 @@ public abstract class StackMapUtils {
       new_lvg =
           mgen.addLocalVariable(
               "DaIkOnTeMp" + offset, live_type, offset, il.findHandle(live_start), null);
-      debug_instrument.log(
-          "Added local  %s, %d, %d : %s, %s%n",
-          new_lvg.getIndex(),
-          new_lvg.getStart().getPosition(),
-          il.getEnd().getPosition(),
-          new_lvg.getName(),
-          new_lvg.getType());
       min_size = Math.min(min_size, live_type.getSize());
     } else {
       if (min_size == 3) {
@@ -515,13 +498,6 @@ public abstract class StackMapUtils {
         new_lvg =
             mgen.addLocalVariable(
                 "DaIkOnTeMp" + offset, Type.OBJECT, offset, il.findHandle(byte_code_offset), null);
-        debug_instrument.log(
-            "Added local  %s, %d, %d : %s, %s%n",
-            new_lvg.getIndex(),
-            new_lvg.getStart().getPosition(),
-            il.getEnd().getPosition(),
-            new_lvg.getName(),
-            new_lvg.getType());
         min_size = Math.min(min_size, Type.OBJECT.getSize());
       }
     }
@@ -706,9 +682,6 @@ public abstract class StackMapUtils {
       stack_map_table = ((StackMap) smta.copy(smta.getConstantPool())).getStackMap();
       needStackMap = true;
 
-      debug_instrument.log(
-          "Attribute tag: %s length: %d nameIndex: %d%n",
-          smta.getTag(), smta.getLength(), smta.getNameIndex());
       // Delete existing stack map - we'll add a new one later.
       mgen.removeCodeAttribute(smta);
     } else {
@@ -727,11 +700,9 @@ public abstract class StackMapUtils {
    */
   protected final void print_stack_map_table(String prefix) {
 
-    debug_instrument.log("%nStackMap(%s) %s items:%n", prefix, stack_map_table.length);
     running_offset = -1; // no +1 on first entry
     for (int i = 0; i < stack_map_table.length; i++) {
       running_offset = stack_map_table[i].getByteCodeOffset() + running_offset + 1;
-      debug_instrument.log("@%03d %s %n", running_offset, stack_map_table[i]);
     }
   }
 
@@ -990,10 +961,6 @@ public abstract class StackMapUtils {
       }
       mgen.setMaxLocals(mgen.getMaxLocals() + arg_type.getSize());
 
-      debug_instrument.log(
-          "Added arg    %s%n",
-          arg_new.getIndex() + ": " + arg_new.getName() + ", " + arg_new.getType());
-
       // Now process the instruction list, adding one to the offset
       // within each LocalVariableInstruction that references a
       // local that is 'higher' in the local map than new local
@@ -1003,8 +970,6 @@ public abstract class StackMapUtils {
       // Finally, we need to update any FULL_FRAME StackMap entries to
       // add in the new local variable type.
       update_full_frame_stack_map_entries(new_offset, arg_type, locals);
-
-      debug_instrument.log("New LocalVariableTable:%n%s%n", mgen.getLocalVariableTable(pool));
     }
     return arg_new;
   }
@@ -1113,9 +1078,6 @@ public abstract class StackMapUtils {
       mgen.setMaxLocals(mgen.getMaxLocals() + local_type.getSize());
     }
 
-    debug_instrument.log(
-        "Added local  %s%n", lv_new.getIndex() + ": " + lv_new.getName() + ", " + lv_new.getType());
-
     // Now process the instruction list, adding one to the offset
     // within each LocalVariableInstruction that references a
     // local that is 'higher' in the local map than new local
@@ -1126,7 +1088,6 @@ public abstract class StackMapUtils {
     // add in the new local variable type.
     update_full_frame_stack_map_entries(new_offset, local_type, locals);
 
-    debug_instrument.log("New LocalVariableTable:%n%s%n", mgen.getLocalVariableTable(pool));
     return lv_new;
   }
 
@@ -1198,9 +1159,6 @@ public abstract class StackMapUtils {
       // Add the 'this' pointer back in.
       l = locals[0];
       new_lvg = mgen.addLocalVariable(l.getName(), l.getType(), l.getIndex(), null, null);
-      debug_instrument.log(
-          "Added <this> %s%n",
-          new_lvg.getIndex() + ": " + new_lvg.getName() + ", " + new_lvg.getType());
       loc_index = 1;
       offset = 1;
       first_local_index++;
@@ -1219,9 +1177,6 @@ public abstract class StackMapUtils {
         new_lvg = mgen.addLocalVariable(l.getName(), l.getType(), l.getIndex(), null, null);
         loc_index++;
       }
-      debug_instrument.log(
-          "Added param  %s%n",
-          new_lvg.getIndex() + ": " + new_lvg.getName() + ", " + new_lvg.getType());
       offset += arg_types[ii].getSize();
     }
 
@@ -1257,9 +1212,6 @@ public abstract class StackMapUtils {
       } else {
         new_lvg =
             mgen.addLocalVariable(l.getName(), l.getType(), l.getIndex(), l.getStart(), l.getEnd());
-        debug_instrument.log(
-            "Added local  %s%n",
-            new_lvg.getIndex() + ": " + new_lvg.getName() + ", " + new_lvg.getType());
         offset = new_lvg.getIndex() + new_lvg.getType().getSize();
       }
     }
@@ -1271,33 +1223,5 @@ public abstract class StackMapUtils {
 
     // Recalculate the highest local used based on looking at code offsets.
     mgen.setMaxLocals();
-  }
-
-  /**
-   * Calculates the types on the stack for each instruction using the BCEL stack verification
-   * routines.
-   *
-   * @param mg MethodGen for the method to be analyzed
-   * @return a StackTypes object for the method
-   */
-  protected final StackTypes bcel_calc_stack_types(MethodGen mg) {
-
-    StackVer stackver = new StackVer();
-    VerificationResult vr;
-    try {
-      vr = stackver.do_stack_ver(mg);
-    } catch (Throwable t) {
-      System.out.printf("Warning: StackVer exception for %s.%s%n", mg.getClassName(), mg.getName());
-      System.out.printf("Exception: %s%n", t);
-      System.out.printf("Method is NOT instrumented%n");
-      return null;
-    }
-    if (vr != VerificationResult.VR_OK) {
-      System.out.printf(
-          "Warning: StackVer failed for %s.%s: %s%n", mg.getClassName(), mg.getName(), vr);
-      System.out.printf("Method is NOT instrumented%n");
-      return null;
-    }
-    return stackver.get_stack_types();
   }
 }

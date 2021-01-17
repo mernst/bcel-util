@@ -17,7 +17,6 @@ import org.apache.bcel.generic.LineNumberGen;
 import org.apache.bcel.generic.LocalVariableGen;
 import org.apache.bcel.generic.MethodGen;
 import org.apache.bcel.generic.TABLESWITCH;
-import org.apache.bcel.verifier.structurals.OperandStack;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -183,7 +182,6 @@ public abstract class InstructionListUtils extends StackMapUtils {
     int new_length = new_end.getPosition() + new_end.getInstruction().getLength();
 
     print_stack_map_table("Before insert_inst");
-    debug_instrument.log("  insert_inst: %d%n%s%n", new_il.getLength(), new_il);
 
     // Add the new code in front of the instruction handle.
     InstructionHandle new_start = il.insert(ih, new_il);
@@ -244,21 +242,8 @@ public abstract class InstructionListUtils extends StackMapUtils {
    * @param start start of the instruction list
    * @param label a descriptive string for the instruction list
    */
-  private void print_il(InstructionHandle start, String label) {
-    if (debug_instrument.enabled()) {
-      print_stack_map_table(label);
-      InstructionHandle tih = start;
-      while (tih != null) {
-        debug_instrument.log("inst: %s %n", tih);
-        if (tih.hasTargeters()) {
-          for (InstructionTargeter it : tih.getTargeters()) {
-            debug_instrument.log("targeter: %s %n", it);
-          }
-        }
-        tih = tih.getNext();
-      }
-    }
-  }
+  @SuppressWarnings("UnusedVariable")
+  private void print_il(InstructionHandle start, String label) {}
 
   /**
    * Convenience function to build an instruction list.
@@ -362,22 +347,6 @@ public abstract class InstructionListUtils extends StackMapUtils {
   }
 
   /**
-   * Compute the StackMapTypes of the items on the execution stack as described by the OperandStack
-   * argument.
-   *
-   * @param stack an OperandStack object
-   * @return an array of StackMapType describing the stack contents
-   */
-  protected final StackMapType[] calculate_live_stack_types(OperandStack stack) {
-    int ss = stack.size();
-    StackMapType[] stack_map_types = new StackMapType[ss];
-    for (int ii = 0; ii < ss; ii++) {
-      stack_map_types[ii] = generate_StackMapType_from_Type(stack.peek(ss - ii - 1));
-    }
-    return stack_map_types;
-  }
-
-  /**
    * Replace instruction ih in list il with the instructions in new_il. If new_il is null, do
    * nothing.
    *
@@ -401,7 +370,6 @@ public abstract class InstructionListUtils extends StackMapUtils {
     InstructionHandle end = new_il.getEnd();
     int new_length = end.getPosition() + end.getInstruction().getLength();
 
-    debug_instrument.log("  replace_inst: %s %d%n%s%n", ih, new_il.getLength(), new_il);
     print_il(ih, "Before replace_inst");
 
     // If there is only one new instruction, just replace it in the handle
@@ -504,7 +472,6 @@ public abstract class InstructionListUtils extends StackMapUtils {
             for (InstructionTargeter it : nih.getTargeters()) {
               if (it instanceof BranchInstruction) {
                 target_offsets[target_count++] = nih.getPosition();
-                debug_instrument.log("New branch target: %s %n", nih);
               }
             }
           }
@@ -516,23 +483,11 @@ public abstract class InstructionListUtils extends StackMapUtils {
         if (target_count != 0) {
           // Currently, target_count is always 2; but code is
           // written to allow more.
-          int cur_loc = new_start.getPosition();
           int orig_size = stack_map_table.length;
           StackMapEntry[] new_stack_map_table = new StackMapEntry[orig_size + target_count];
 
           // Calculate the operand stack value(s) for revised code.
           mg.setMaxStack();
-          OperandStack stack;
-          StackTypes stack_types = bcel_calc_stack_types(mg);
-          if (stack_types == null) {
-            Error e =
-                new Error(
-                    String.format(
-                        "bcel_calc_stack_types failure in %s.%s%n",
-                        mg.getClassName(), mg.getName()));
-            e.printStackTrace();
-            throw e;
-          }
 
           // Find last stack map entry prior to first new branch target;
           // returns -1 if there isn't one. Also sets running_offset and number_active_locals.
@@ -574,8 +529,7 @@ public abstract class InstructionListUtils extends StackMapUtils {
           // that it plans to identify in a subsequent StackMap APPEND entry.
 
           // First, lets calculate the number and types of the live locals.
-          StackMapType[] local_map_types = calculate_live_local_types(mg, cur_loc);
-          int local_map_index = local_map_types.length;
+          int local_map_index = 0;
 
           // local_map_index now contains the number of live locals.
           // number_active_locals has been calculated from the existing StackMap.
@@ -590,12 +544,10 @@ public abstract class InstructionListUtils extends StackMapUtils {
 
           boolean need_full_maps = false;
           for (int i = 0; i < target_count; i++) {
-            stack = stack_types.get(target_offsets[i]);
-            debug_instrument.log("stack: %s %n", stack);
 
-            if (number_extra_locals == 0 && stack.size() == 1 && !need_full_maps) {
+            if (number_extra_locals == 0 && !need_full_maps) {
               // the simple case
-              StackMapType stack_map_type0 = generate_StackMapType_from_Type(stack.peek(0));
+              StackMapType stack_map_type0 = generate_StackMapType_from_Type(null);
               StackMapType[] stack_map_types0 = {stack_map_type0};
               new_stack_map_table[new_index + i] =
                   new StackMapEntry(
@@ -611,8 +563,8 @@ public abstract class InstructionListUtils extends StackMapUtils {
                   new StackMapEntry(
                       Const.FULL_FRAME,
                       0, // byte_code_offset set below
-                      calculate_live_local_types(mg, target_offsets[i]),
-                      calculate_live_stack_types(stack),
+                      null,
+                      null,
                       pool.getConstantPool());
             }
             // now set the offset from the previous Stack Map entry to our new one.
@@ -658,14 +610,13 @@ public abstract class InstructionListUtils extends StackMapUtils {
               while (remainder > 0) {
                 int stack_map_offset = stack_map_table[new_index].getByteCodeOffset();
                 running_offset = running_offset + stack_map_offset + 1;
-                stack = stack_types.get(running_offset);
                 // System.out.printf("running_offset: %d, stack: %s%n", running_offset, stack);
                 new_stack_map_table[new_index + target_count] =
                     new StackMapEntry(
                         Const.FULL_FRAME,
                         stack_map_offset,
                         calculate_live_local_types(mg, running_offset),
-                        calculate_live_stack_types(stack),
+                        null,
                         pool.getConstantPool());
                 new_index++;
                 remainder--;
@@ -684,7 +635,6 @@ public abstract class InstructionListUtils extends StackMapUtils {
       }
     }
 
-    debug_instrument.log("%n");
     print_il(new_end, "replace_inst #5");
   }
 }
