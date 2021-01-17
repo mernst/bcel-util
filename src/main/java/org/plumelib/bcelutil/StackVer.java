@@ -441,7 +441,7 @@ public final class StackVer {
 
     final ConstantPoolGen constantPoolGen = mg.getConstantPool();
     // Init Visitors
-    final InstConstraintVisitor icv = new NoConstraintsVisitor();
+    final InstConstraintVisitor icv = new InstConstraintVisitor();
     icv.setConstantPoolGen(constantPoolGen);
 
     final ExecutionVisitor ev = new ExecutionVisitor();
