@@ -2,14 +2,13 @@ plugins {
   id("java-library")
 
   // To create a fat jar build/libs/...-all.jar, run: ./gradlew shadowJar
-  id("com.gradleup.shadow").version("9.3.1")
+  alias(libs.plugins.com.gradleup.shadow)
 
   // Code formatting; defines targets "spotlessApply" and "spotlessCheck"
-  // Version 8.0.0 and later requires Java 17+.
-  id("com.diffplug.spotless").version("8.2.1")
+  alias(libs.plugins.com.diffplug.spotless)
 
   // Error Prone linter
-  id("net.ltgt.errorprone").version("5.0.0") apply false
+  alias(libs.plugins.net.ltgt.errorprone) apply false
 
   // PMD linter
   id("pmd")
@@ -18,10 +17,10 @@ plugins {
   id("jacoco")
 
   // Checker Framework pluggable type-checking
-  id("org.checkerframework").version("1.0.2")
+  alias(libs.plugins.org.checkerframework)
 
   // Publishing to Maven Central.
-  id("com.vanniktech.maven.publish").version("0.36.0")
+  alias(libs.plugins.com.vanniktech.maven.publish)
 }
 
 repositories {
@@ -31,26 +30,26 @@ repositories {
   gradlePluginPortal()
 }
 
-ext {
-  errorproneVersion = "2.47.0"
-  isJava17orHigher = JavaVersion.current() >= JavaVersion.VERSION_17
-  isJava21orHigher = JavaVersion.current() >= JavaVersion.VERSION_21
-}
-
 dependencies {
-  api("org.checkerframework.annotatedlib:bcel:6.5.0")
+  api(libs.bcel)
   // For a locally-built commons-bcel, set $BCEL and use this line instead of the above.
   // implementation fileTree(dir: "$System.env.BCEL/target", include: "bcel-6.2.0.2.jar")
 
-  implementation("org.plumelib:reflection-util:1.1.5")
+  implementation(libs.reflection.util)
 
-  testImplementation("org.junit.jupiter:junit-jupiter:6.0.2")
-  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  testImplementation(libs.junit.jupiter)
+  testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 java {
-  sourceCompatibility = JavaVersion.VERSION_1_8
-  targetCompatibility = JavaVersion.VERSION_1_8
+  toolchain {
+    // Always compile using Java 21, but test using various Java versions.
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+tasks.withType(JavaCompile).configureEach {
+  // Set the language level and byte code to 17.
+  options.release = 17
 }
 
 test {
@@ -110,17 +109,12 @@ tasks.withType(JavaCompile).configureEach {
   options.forkOptions.jvmArgs += "-Xmx6g"
   options.compilerArgs << "-Werror"
   // "-processing" avoids javac warning "No processor claimed any of these annotations".
-  // "-Xlint:-options" is because of JDK 21 warning "source value 8 is obsolete..."
-  if (isJava21orHigher) {
-    options.compilerArgs << "-Xlint:all,-processing,-options,-this-escape"
-  } else {
-    options.compilerArgs << "-Xlint:all,-processing,-options"
-  }
+  options.compilerArgs << "-Xlint:all,-processing"
 }
-if (isJava21orHigher) {
+if (JavaVersion.current() >= JavaVersion.VERSION_21) {
   apply plugin: "net.ltgt.errorprone"
   dependencies {
-    errorprone("com.google.errorprone:error_prone_core:${errorproneVersion}")
+    errorprone(libs.error.prone.core)
   }
   tasks.withType(JavaCompile).configureEach {
     options.errorprone {
@@ -129,21 +123,17 @@ if (isJava21orHigher) {
       disable("EffectivelyPrivate") // Loses information about the abstraction.
       disable("ExtendsObject")  // Incorrect when using the Checker Framework.
       disable("InlineMeSuggester") // Using `@InlineMe` requires clients to declare a dependency on error_prone_annotations.
-      disable("PatternMatchingInstanceof") // requires Java 16 or later
       disable("ReferenceEquality") // Use Interning Checker instead.
-      disable("StatementSwitchToExpressionSwitch") // requires Java 12 or later
-      disable("StringConcatToTextBlock") // requires Java 15 or later
       // Code copied from BCEL that we don't want to change gratuitously.
       excludedPaths = ".*/org/plumelib/bcelutil/StackVer.java"
     }
   }
 }
 
-
 // PMD linter
 
 pmd {
-  toolVersion = "7.21.0"
+  toolVersion = "7.25.0"
   ruleSetFiles = files("${rootDir}/.pmd-ruleset.xml")
   consoleOutput = true
   ignoreFailures = false
@@ -156,7 +146,7 @@ pmd {
 apply plugin: "org.checkerframework"
 
 checkerFramework {
-  version = libs.checker.get().version
+  version = libs.checker.framework.get().version
   checkers = [
     // No need to run CalledMethodsChecker, because ResourceLeakChecker does so.
     // "org.checkerframework.checker.calledmethods.CalledMethodsChecker",
@@ -194,22 +184,6 @@ javadoc {
   // Turn Javadoc warnings into errors.
   options.addStringOption("Xwerror", "-Xdoclint:all")
   options.addStringOption("private", "-quiet")
-  options.with {
-    // "linksOffline "https://docs.oracle.com/javase/8/docs/api/", ..."
-    // no longer works, because that URL redirects to https://docs.oracle.com/en/java/javase/19/ but not to any specific webpage under it.
-    // "linksOffline "https://docs.oracle.com/en/java/javase/17/docs/api/", ..."
-    // does not works under JDK <= 17.
-    // Under JDK 11 and JDK 17, even with "-source 8", it yields error:
-    //   The code being documented uses packages in the unnamed module, but the packages defined in
-    //   https://docs.oracle.com/en/java/javase/17/docs/api/ are in named modules.
-    // See https://bugs.openjdk.org/browse/JDK-8274639
-    // JDK 18 has a "--link-modularity-mismatch" command-line option which is "info" or "warn".
-    // I think it would work to:
-    //  * use JDK 11 links under JDK <= 17.
-    //  * use JDK 17 links, and "--link-modularity-mismatch info", under JDK > 17 (i.e., JDK >= 18).
-    // But it's easier to just not use "linksOffline".
-  }
-  options.addStringOption("source", "11")
   doLast {
     ant.replaceregexp(match:"@import url\\('resources/fonts/dejavu.css'\\);\\s*", replace:"",
     flags:"g", byline:true) {
@@ -227,7 +201,6 @@ tasks.register("javadocWebUpload", Javadoc) {
   source = sourceSets.main.allJava
   destinationDir = file("/cse/web/research/plumelib/${project.name}/api")
   classpath = project.sourceSets.main.compileClasspath
-  options.addStringOption("source", "11")
   doLast {
     ant.replaceregexp(match:"@import url\\('resources/fonts/dejavu.css'\\);\\s*", replace:"",
     flags:"g", byline:true) {
@@ -252,7 +225,7 @@ configurations {
   requireJavadoc
 }
 dependencies {
-  requireJavadoc("org.plumelib:require-javadoc:2.0.0")
+  requireJavadoc(libs.require.javadoc)
 }
 def requireJavadoc = tasks.register("requireJavadoc", JavaExec) {
   group = "Documentation"
@@ -316,6 +289,12 @@ tasks.register("installGitHooks", Copy) {
   description = "Copies git hooks to .git directory"
   from("githooks")
   into(".git/hooks")
+  eachFile {
+    File target = file("$destinationDir/$relativePath")
+    if (java.nio.file.Files.isSymbolicLink(target.toPath())) {
+      java.nio.file.Files.delete(target.toPath()) // Fail if the symlink cannot be removed
+    }
+  }
 }
 
 tasks.withType(JavaCompile) {

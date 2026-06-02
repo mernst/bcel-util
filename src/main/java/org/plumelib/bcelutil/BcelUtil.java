@@ -3,8 +3,6 @@ package org.plumelib.bcelutil;
 import java.io.File;
 import java.io.PrintStream;
 import java.util.Arrays;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.apache.bcel.Const;
 import org.apache.bcel.classfile.Attribute;
 import org.apache.bcel.classfile.Code;
@@ -50,43 +48,8 @@ public final class BcelUtil {
   /** The type that represents String[]. */
   private static final Type stringArray = Type.getType("[Ljava.lang.String;");
 
-  /** The major version number of the Java runtime (JRE), such as 8, 11, or 17. */
-  public static final int javaVersion = getJavaVersion();
-
-  // Keep in sync with SystemUtil.java (in the Checker Framework).
-  /**
-   * Returns the major version number from the "java.version" system property, such as 8, 11, or 17.
-   *
-   * <p>Two possible formats of the "java.version" system property are considered. Up to Java 8,
-   * from a version string like `1.8.whatever`, this method extracts 8. Since Java 9, from a version
-   * string like `11.0.1`, this method extracts 11.
-   *
-   * <p>Starting in Java 9, there is the int {@code Runtime.version().feature()}, but that does not
-   * exist on JDK 8.
-   *
-   * @return the major version of the Java runtime
-   */
-  private static int getJavaVersion() {
-
-    String version = System.getProperty("java.version");
-
-    // Up to Java 8, from a version string like "1.8.whatever", extract "8".
-    if (version.startsWith("1.")) {
-      return Integer.parseInt(version.substring(2, 3));
-    }
-
-    // Since Java 9, from a version string like "11.0.1" or "11-ea" or "11u25", extract "11".
-    // The format is described at http://openjdk.org/jeps/223 .
-    Pattern newVersionPattern = Pattern.compile("^(\\d+).*$");
-    Matcher newVersionMatcher = newVersionPattern.matcher(version);
-    if (newVersionMatcher.matches()) {
-      String v = newVersionMatcher.group(1);
-      assert v != null : "@AssumeAssertion(nullness): inspection";
-      return Integer.parseInt(v);
-    }
-
-    throw new RuntimeException("Could not determine version from property java.version=" + version);
-  }
+  /** The major version number of the Java runtime (JRE), such as 17, 21, or 25. */
+  public static final int javaVersion = Runtime.version().feature();
 
   // 'ToString' methods
 
@@ -106,16 +69,14 @@ public final class BcelUtil {
 
     StringBuilder sb = new StringBuilder();
     String flags = accessFlagsToString(m);
-    boolean argsExist = false;
     if (flags != null && !flags.isEmpty()) {
       sb.append(String.format("%s ", flags));
     }
     sb.append(String.format("%s %s(", m.getReturnType(), m.getName()));
     for (Type at : m.getArgumentTypes()) {
       sb.append(String.format("%s, ", at));
-      argsExist = true;
     }
-    if (argsExist) {
+    if (m.getArgumentTypes().length > 0) {
       sb.setLength(sb.length() - 2); // remove trailing ", "
     }
     sb.append(')');
@@ -314,7 +275,7 @@ public final class BcelUtil {
         || classname.startsWith("com/sun/")
         || classname.startsWith("javax/")
         || classname.startsWith("jdk/")
-        || classname.startsWith("org/ietj/")
+        || classname.startsWith("org/ietf/")
         || classname.startsWith("org/jcp/")
         || classname.startsWith("org/w3c/")
         || classname.startsWith("org/xml/")
@@ -579,10 +540,9 @@ public final class BcelUtil {
 
     Constant c = pool.getConstant(index);
     assert c != null : "Bad index " + index + " into pool";
-    if (c instanceof ConstantUtf8) {
-      return ((ConstantUtf8) c).getBytes();
-    } else if (c instanceof ConstantClass) {
-      ConstantClass cc = (ConstantClass) c;
+    if (c instanceof ConstantUtf8 cutf8) {
+      return cutf8.getBytes();
+    } else if (c instanceof ConstantClass cc) {
       return cc.getBytes(pool) + " [" + cc.getNameIndex() + "]";
     } else {
       throw new Error("unexpected constant " + c + " of class " + c.getClass());
@@ -685,10 +645,10 @@ public final class BcelUtil {
    *
    * @param types the array to extend
    * @param newType the element to add to the end of the array
-   * @return a new array, with newType at the end
+   * @return a new array, with {@code newType} at the end
    * @deprecated use ArraysPlume.append()
    */
-  @Deprecated // 2025-11-26; to make package-private
+  @Deprecated(since = "2025-11-26") // to make package-private
   public static Type[] postpendToArray(Type[] types, Type newType) {
     if (types.length == Integer.MAX_VALUE) {
       throw new Error("array " + Arrays.toString(types) + " is too large to extend");
@@ -725,28 +685,21 @@ public final class BcelUtil {
    * @see #fqBinaryNameToType
    */
   public static Type binaryNameToType(@BinaryNameOrPrimitiveType String classname) {
-
-    if (classname.equals("int")) {
-      return Type.INT;
-    } else if (classname.equals("boolean")) {
-      return Type.BOOLEAN;
-    } else if (classname.equals("byte")) {
-      return Type.BYTE;
-    } else if (classname.equals("char")) {
-      return Type.CHAR;
-    } else if (classname.equals("double")) {
-      return Type.DOUBLE;
-    } else if (classname.equals("float")) {
-      return Type.FLOAT;
-    } else if (classname.equals("long")) {
-      return Type.LONG;
-    } else if (classname.equals("short")) {
-      return Type.SHORT;
-    } else {
-      @SuppressWarnings("signature") // It's not a primitive, so it's a proper binary name.
-      @BinaryName String binaryName = classname;
-      return new ObjectType(binaryName);
-    }
+    return switch (classname) {
+      case "int" -> Type.INT;
+      case "boolean" -> Type.BOOLEAN;
+      case "byte" -> Type.BYTE;
+      case "char" -> Type.CHAR;
+      case "double" -> Type.DOUBLE;
+      case "float" -> Type.FLOAT;
+      case "long" -> Type.LONG;
+      case "short" -> Type.SHORT;
+      default -> {
+        @SuppressWarnings("signature") // It's not a primitive, so it's a proper binary name.
+        @BinaryName String binaryName = classname;
+        yield new ObjectType(binaryName);
+      }
+    };
   }
 
   /**

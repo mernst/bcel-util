@@ -125,8 +125,8 @@ public abstract class StackMapUtils {
   protected int firstLocalIndex;
 
   /** An empty StackMap used for initialization. */
-  @SuppressWarnings("interning") // @InternedDistinct initalization with fresh object
-  private StackMapEntry @InternedDistinct [] emptyStackmaptable = {};
+  @SuppressWarnings("interning") // @InternedDistinct initialization with fresh object
+  private StackMapEntry @InternedDistinct [] emptyStackMapTable = {};
 
   /**
    * A map from instructions that create uninitialized NEW objects to the corresponding StackMap
@@ -349,20 +349,17 @@ public abstract class StackMapUtils {
    * @param il instruction list to search
    */
   protected final void modifyStackMapsForSwitches(InstructionHandle ih, InstructionList il) {
-    Instruction inst;
-    short opcode;
-
     if (!needStackMap) {
       return;
     }
 
-    // Make sure all instruction offsets are uptodate.
+    // Make sure all instruction offsets are up-to-date.
     il.setPositions();
 
     // Loop through each instruction looking for a switch
     while (ih != null) {
-      inst = ih.getInstruction();
-      opcode = inst.getOpcode();
+      Instruction inst = ih.getInstruction();
+      short opcode = inst.getOpcode();
 
       if (opcode == Const.TABLESWITCH || opcode == Const.LOOKUPSWITCH) {
         int currentOffset = ih.getPosition();
@@ -505,17 +502,17 @@ public abstract class StackMapUtils {
       int origLength = inst.getLength();
       int operand;
 
-      if ((inst instanceof RET) || (inst instanceof IINC)) {
-        IndexedInstruction indexInst = (IndexedInstruction) inst;
+      if (inst instanceof IndexedInstruction indexInst
+          && (inst instanceof RET || inst instanceof IINC)) {
         if (indexInst.getIndex() >= indexFirstMovedlocal) {
           indexInst.setIndex(indexInst.getIndex() + size);
         }
-      } else if (inst instanceof LocalVariableInstruction) {
+      } else if (inst instanceof LocalVariableInstruction lvi) {
         // BCEL handles all the details of which opcode and if index
         // is implicit or explicit; also, and if needs to be WIDE.
-        operand = ((LocalVariableInstruction) inst).getIndex();
+        operand = lvi.getIndex();
         if (operand >= indexFirstMovedlocal) {
-          ((LocalVariableInstruction) inst).setIndex(operand + size);
+          lvi.setIndex(operand + size);
         }
       }
       // Unfortunately, BCEL doesn't take care of incrementing the
@@ -554,7 +551,7 @@ public abstract class StackMapUtils {
       // Delete existing stack map - we'll add a new one later.
       mgen.removeCodeAttribute(smta);
     } else {
-      stackMapTable = emptyStackmaptable;
+      stackMapTable = emptyStackMapTable;
       if (javaClassVersion > Const.MAJOR_1_6) {
         needStackMap = true;
       }
@@ -588,7 +585,7 @@ public abstract class StackMapUtils {
     if (!needStackMap) {
       return;
     }
-    if (stackMapTable == emptyStackmaptable) {
+    if (stackMapTable == emptyStackMapTable) {
       return;
     }
     printStackMapTable("Final");
@@ -609,8 +606,8 @@ public abstract class StackMapUtils {
   @SuppressWarnings("signature") // conversion routine
   protected static @ClassGetName String typeToClassGetName(Type t) {
 
-    if (t instanceof ObjectType) {
-      return ((ObjectType) t).getClassName();
+    if (t instanceof ObjectType ot) {
+      return ot.getClassName();
     } else if (t instanceof BasicType) {
       // Use reserved keyword for basic type rather than signature to
       // avoid conflicts with user defined types.
@@ -629,31 +626,20 @@ public abstract class StackMapUtils {
    */
   protected final StackMapType generateStackMapTypeFromType(Type t) {
 
-    switch (t.getType()) {
-      case Const.T_BOOLEAN:
-      case Const.T_CHAR:
-      case Const.T_BYTE:
-      case Const.T_SHORT:
-      case Const.T_INT:
-        return new StackMapType(Const.ITEM_Integer, -1, pool.getConstantPool());
-      case Const.T_FLOAT:
-        return new StackMapType(Const.ITEM_Float, -1, pool.getConstantPool());
-      case Const.T_DOUBLE:
-        return new StackMapType(Const.ITEM_Double, -1, pool.getConstantPool());
-      case Const.T_LONG:
-        return new StackMapType(Const.ITEM_Long, -1, pool.getConstantPool());
-      case Const.T_ARRAY:
-      case Const.T_OBJECT:
-        return new StackMapType(
-            Const.ITEM_Object, pool.addClass(typeToClassGetName(t)), pool.getConstantPool());
-      // UNKNOWN seems to be used for Uninitialized objects.
-      // The second argument to the constructor should be the code offset
-      // of the corresponding 'new' instruction.  Just using 0 for now.
-      case Const.T_UNKNOWN:
-        return new StackMapType(Const.ITEM_NewObject, 0, pool.getConstantPool());
-      default:
+    return switch (t.getType()) {
+      case Const.T_BOOLEAN, Const.T_CHAR, Const.T_BYTE, Const.T_SHORT, Const.T_INT ->
+          new StackMapType(Const.ITEM_Integer, -1, pool.getConstantPool());
+      case Const.T_FLOAT -> new StackMapType(Const.ITEM_Float, -1, pool.getConstantPool());
+      case Const.T_DOUBLE -> new StackMapType(Const.ITEM_Double, -1, pool.getConstantPool());
+      case Const.T_LONG -> new StackMapType(Const.ITEM_Long, -1, pool.getConstantPool());
+      case Const.T_ARRAY, Const.T_OBJECT ->
+          new StackMapType(
+              Const.ITEM_Object, pool.addClass(typeToClassGetName(t)), pool.getConstantPool());
+      // We think that Const.T_UNKNOWN should never happen.
+      default -> {
         throw new RuntimeException("Invalid type: " + t + t.getType());
-    }
+      }
+    };
   }
 
   /**
@@ -664,33 +650,31 @@ public abstract class StackMapUtils {
    */
   protected final Type generate_Type_from_StackMapType(StackMapType smt) {
 
-    switch (smt.getType()) {
-      case Const.ITEM_Bogus: // 'top' (undefined) in JVM verification nomenclature
-      case Const.ITEM_Null: // no idea what this means, but Groovy generates it (mlr)
-        return null;
-      case Const.ITEM_Integer:
-        return Type.INT;
-      case Const.ITEM_Float:
-        return Type.FLOAT;
-      case Const.ITEM_Double:
-        return Type.DOUBLE;
-      case Const.ITEM_Long:
-        return Type.LONG;
-      case Const.ITEM_Object:
+    return switch (smt.getType()) {
+      // "ITEM_Bogus" is 'top' (undefined) in JVM verification nomenclature.
+      // I have no idea what "ITEM_Null means, but Groovy generates it (MLR).
+      case Const.ITEM_Bogus, Const.ITEM_Null -> null;
+      case Const.ITEM_Integer -> Type.INT;
+      case Const.ITEM_Float -> Type.FLOAT;
+      case Const.ITEM_Double -> Type.DOUBLE;
+      case Const.ITEM_Long -> Type.LONG;
+      case Const.ITEM_Object -> {
         Constant c = pool.getConstantPool().getConstant(smt.getIndex());
         @SuppressWarnings("signature") // ConstantPool CONSTANT_Class entry is a ClassName
         @BinaryName String className = ((ConstantClass) c).getBytes(pool.getConstantPool());
         if (className.charAt(0) == '[') {
           // special case, className is descriptor of array type
-          return Type.getType(className);
+          yield Type.getType(className);
         } else {
-          return new ObjectType(className);
+          yield new ObjectType(className);
         }
-      default:
+      }
+      default -> {
         Thread.dumpStack();
         assert false : "Invalid StackMapType: " + smt + smt.getType();
         throw new RuntimeException("Invalid StackMapType: " + smt + smt.getType());
-    }
+      }
+    };
   }
 
   /**
@@ -700,13 +684,10 @@ public abstract class StackMapUtils {
    * @return the operand size of this type
    */
   protected final int getSize(StackMapType smt) {
-    switch (smt.getType()) {
-      case Const.ITEM_Double:
-      case Const.ITEM_Long:
-        return 2;
-      default:
-        return 1;
-    }
+    return switch (smt.getType()) {
+      case Const.ITEM_Double, Const.ITEM_Long -> 2;
+      default -> 1;
+    };
   }
 
   /**
@@ -766,7 +747,7 @@ public abstract class StackMapUtils {
     // we need to make a pass over the byte codes to update the local
     // offset values of all the locals we just shifted up.  This may have
     // a 'knock on' effect if we are forced to change an instruction that
-    // references implict local #3 to an instruction with an explict
+    // references implicit local #3 to an instruction with an explicit
     // reference to local #4 as this would require the insertion of an
     // offset into the byte codes. This means we would need to make an
     // additional pass to update branch targets (no - BCEL does this for
@@ -862,7 +843,7 @@ public abstract class StackMapUtils {
     // Now we need to make a pass over the byte codes to update the local
     // offset values of all the locals we just shifted up.  This may have
     // a 'knock on' effect if we are forced to change an instruction that
-    // references implict local #3 to an instruction with an explict
+    // references implicit local #3 to an instruction with an explicit
     // reference to local #4 as this would require the insertion of an
     // offset into the byte codes. This means we would need to make an
     // additional pass to update branch targets (no - BCEL does this for
@@ -903,7 +884,7 @@ public abstract class StackMapUtils {
 
       if (lv.getName().startsWith("DaIkOnTeMp")) {
         // Remember the index of a compiler temp.  We may wish
-        // to insert our new local prior to a temp to simplfy
+        // to insert our new local prior to a temp to simplify
         // the generation of StackMaps.
         if (compilerTempI == -1) {
           compilerTempI = i;
@@ -997,7 +978,7 @@ public abstract class StackMapUtils {
    *       <ul>
    *         <li>saving the exception in a finally clause
    *         <li>the lock for a synchronized block
-   *         <li>interators
+   *         <li>iterators
    *         <li>user declared locals that never appear in a StackMap
    *         <li>(others?)
    *       </ul>
@@ -1165,7 +1146,7 @@ public abstract class StackMapUtils {
     InstructionList il = mgen.getInstructionList();
     il.setPositions();
 
-    // Set up inital state of StackMap info on entry to method.
+    // Set up initial state of StackMap info on entry to method.
     int localsOffsetHeight = 0;
     int byteCodeOffset = -1;
     LocalVariableGen newLvg;
@@ -1339,8 +1320,8 @@ public abstract class StackMapUtils {
           "gen_locals_from_byte_codes for offset: %d :: position: %d, inst: %s%n",
           offset, ih.getPosition(), inst);
 
-      if (inst instanceof StoreInstruction) {
-        if (offset != ((LocalVariableInstruction) inst).getIndex()) {
+      if (inst instanceof StoreInstruction si) {
+        if (offset != si.getIndex()) {
           continue;
         }
         stack = stackTypes.get(ih.getPosition());
@@ -1359,8 +1340,8 @@ public abstract class StackMapUtils {
         // update liveRangeEnd
         liveRangeEnd = ih.getNext();
 
-      } else if (inst instanceof IINC) {
-        if (offset != ((IndexedInstruction) inst).getIndex()) {
+      } else if (inst instanceof IINC iinc) {
+        if (offset != iinc.getIndex()) {
           continue;
         }
         if (liveRangeType == null) {
@@ -1371,8 +1352,8 @@ public abstract class StackMapUtils {
         // update liveRangeEnd
         liveRangeEnd = ih.getNext();
 
-      } else if (inst instanceof RET) {
-        if (offset != ((IndexedInstruction) inst).getIndex()) {
+      } else if (inst instanceof RET ret) {
+        if (offset != ret.getIndex()) {
           continue;
         }
         if (liveRangeType == null) {
@@ -1384,8 +1365,8 @@ public abstract class StackMapUtils {
         // update liveRangeEnd
         liveRangeEnd = ih.getNext();
 
-      } else if (inst instanceof LoadInstruction) {
-        if (offset != ((LocalVariableInstruction) inst).getIndex()) {
+      } else if (inst instanceof LoadInstruction li) {
+        if (offset != li.getIndex()) {
           continue;
         }
         stack = stackTypes.get(ih.getPosition() + inst.getLength());
