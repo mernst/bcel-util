@@ -33,7 +33,7 @@ import org.checkerframework.checker.signature.qual.BinaryNameOrPrimitiveType;
 import org.checkerframework.checker.signature.qual.ClassGetName;
 import org.checkerframework.checker.signature.qual.FqBinaryName;
 import org.checkerframework.checker.signature.qual.InternalForm;
-import org.plumelib.reflection.ReflectionPlume;
+import org.plumelib.reflection.ReflectionP;
 import org.plumelib.reflection.Signatures;
 
 /** Static utility methods for working with BCEL. */
@@ -625,7 +625,7 @@ public final class BcelUtil {
 
     String classname = typeToClassgetname(type);
     try {
-      return ReflectionPlume.classForName(classname);
+      return ReflectionP.classForName(classname);
     } catch (Exception e) {
       throw new RuntimeException("can't find class for " + classname, e);
     }
@@ -637,10 +637,8 @@ public final class BcelUtil {
    * @param types the array to extend
    * @param newType the element to add to the end of the array
    * @return a new array, with {@code newType} at the end
-   * @deprecated use ArraysPlume.append()
    */
-  @Deprecated(since = "2025-11-26") // to make package-private
-  public static Type[] postpendToArray(Type[] types, Type newType) {
+  /*package-private*/ static Type[] postpendToArray(Type[] types, Type newType) {
     if (types.length == Integer.MAX_VALUE) {
       throw new Error("array " + Arrays.toString(types) + " is too large to extend");
     }
@@ -704,11 +702,11 @@ public final class BcelUtil {
 
     Signatures.ClassnameAndDimensions cad =
         Signatures.ClassnameAndDimensions.parseFqBinaryName(classname);
-    Type eltType = binaryNameToType(cad.classname);
-    if (cad.dimensions == 0) {
+    Type eltType = binaryNameToType(cad.classname());
+    if (cad.dimensions() == 0) {
       return eltType;
     } else {
-      return new ArrayType(eltType, cad.dimensions);
+      return new ArrayType(eltType, cad.dimensions());
     }
   }
 }
