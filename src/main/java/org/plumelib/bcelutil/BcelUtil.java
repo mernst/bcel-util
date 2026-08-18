@@ -296,6 +296,17 @@ public final class BcelUtil {
   }
 
   /**
+   * Returns true if the specified attribute is a stack map table.
+   *
+   * @param a the attribute
+   * @param pool the constant pool
+   * @return true iff the attribute is a stack map table
+   */
+  public static boolean isStackMapTable(Attribute a, ConstantPoolGen pool) {
+    return attributeNameToString(a, pool).equals("StackMapTable");
+  }
+
+  /**
    * Returns true if this is a standard main method (static, void, name is 'main', and one formal
    * parameter: a string array).
    *
@@ -609,6 +620,11 @@ public final class BcelUtil {
     mg.removeExceptionHandlers();
     mg.removeLineNumbers();
     mg.removeLocalVariables();
+    // The LocalVariableTypeTable is not a code attribute of the MethodGen; MethodGen stores it in
+    // a field of its own and re-emits it unchanged, so removeLocalVariables() does not remove it.
+    mg.removeLocalVariableTypeTable();
+    // The StackMapTable describes the instructions that were just discarded.
+    removeStackMapTable(mg);
     mg.setMaxLocals();
     mg.setMaxStack();
   }
@@ -624,6 +640,22 @@ public final class BcelUtil {
 
     for (Attribute a : mg.getCodeAttributes()) {
       if (isLocalVariableTypeTable(a, mg.getConstantPool())) {
+        mg.removeCodeAttribute(a);
+      }
+    }
+  }
+
+  /**
+   * Removes the StackMapTable attribute from mg. A StackMapTable describes the state of the operand
+   * stack and the local variables at particular bytecode offsets, so it is invalid after the
+   * method's instructions have changed.
+   *
+   * @param mg the method whose StackMapTable to remove
+   */
+  public static void removeStackMapTable(MethodGen mg) {
+
+    for (Attribute a : mg.getCodeAttributes()) {
+      if (isStackMapTable(a, mg.getConstantPool())) {
         mg.removeCodeAttribute(a);
       }
     }

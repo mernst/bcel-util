@@ -16,7 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.bcel.Const;
 import org.apache.bcel.classfile.Attribute;
+import org.apache.bcel.classfile.Method;
 import org.apache.bcel.generic.ArrayType;
+import org.apache.bcel.generic.ClassGen;
 import org.apache.bcel.generic.InstructionConst;
 import org.apache.bcel.generic.InstructionList;
 import org.apache.bcel.generic.MethodGen;
@@ -25,6 +27,7 @@ import org.apache.bcel.generic.ObjectType;
 import org.apache.bcel.generic.RETURN;
 import org.apache.bcel.generic.Type;
 import org.apache.bcel.verifier.VerificationResult;
+import org.checkerframework.checker.signature.qual.BinaryName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -381,9 +384,35 @@ final class BcelUtilTest {
     assertEquals(0, mg.getExceptionHandlers().length);
     assertEquals(0, mg.getLineNumbers().length);
     assertEquals(0, nonNull(mg.getLocalVariables(), "local variables").length);
-    // A method that falls off its end without returning a value does not verify.
+    // A method that falls off its end without returning a value does not verify. StackVer performs
+    // only the symbolic execution of pass 3b; makeMethodBodyEmptyProducesALoadableClass checks the
+    // attributes that StackVer ignores.
     il.setPositions();
     assertEquals(VerificationResult.VERIFIED_OK, new StackVer().do_stack_ver(mg).getStatus());
+  }
+
+  @Test
+  void makeMethodBodyEmptyProducesALoadableClass() throws ReflectiveOperationException {
+    ClassGen cg = new ClassGen(Fixtures.javaClass);
+    for (Method m : cg.getMethods()) {
+      MethodGen mg = new MethodGen(m, cg.getClassName(), cg.getConstantPool());
+      if (BcelUtil.isConstructor(mg)) {
+        continue;
+      }
+      BcelUtil.makeMethodBodyEmpty(mg);
+      cg.replaceMethod(m, mg.getMethod());
+    }
+
+    // Loading the class checks its format, and instantiating it forces the JVM to link, and
+    // therefore to verify, every method. A stale StackMapTable or LocalVariableTypeTable makes one
+    // of those two steps throw VerifyError or ClassFormatError.
+    Class<?> emptied = defineInFreshLoader(cg.getClassName(), cg.getJavaClass().getBytes());
+    // The constructor was not emptied, so it still sets the field to 5, but getValue() was.
+    Object instance = emptied.getDeclaredConstructor(int.class).newInstance(5);
+
+    @SuppressWarnings("signedness:argument") // the receiver of a reflective call is not a number
+    Object result = emptied.getMethod("getValue").invoke(instance);
+    assertEquals(0, result, "the emptied method should return the default value");
   }
 
   @Test
@@ -414,6 +443,27 @@ final class BcelUtilTest {
         originalLength,
         nonNull(mg.getInstructionList(), "instruction list").getLength(),
         "the constructor should be unchanged");
+  }
+
+  /**
+   * Defines a class from the given class file, in a class loader of its own so that it does not
+   * clash with the class that the test itself was compiled against.
+   *
+   * @param className the binary name of the class that {@code classfile} defines
+   * @param classfile the bytes of the class file
+   * @return the loaded class
+   */
+  private static Class<?> defineInFreshLoader(@BinaryName String className, byte[] classfile) {
+    class ByteArrayLoader extends ClassLoader {
+      ByteArrayLoader() {
+        super(BcelUtilTest.class.getClassLoader());
+      }
+
+      Class<?> define(@BinaryName String name, byte[] bytes) {
+        return defineClass(name, bytes, 0, bytes.length);
+      }
+    }
+    return new ByteArrayLoader().define(className, classfile);
   }
 
   /**

@@ -1,9 +1,13 @@
 package org.plumelib.bcelutil;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * A class that the tests read with BCEL, to obtain bytecode to operate on. Nothing calls its
  * methods; they exist so that the tests have a class containing two constructors, a class
- * initializer, a main method, local variables, a loop, and an exception handler.
+ * initializer, a main method, local variables, a loop, an exception handler, and a generic local
+ * variable.
  */
 public class BcelUtilTestFixture {
 
@@ -82,6 +86,18 @@ public class BcelUtilTestFixture {
     } catch (NumberFormatException e) {
       return fallback;
     }
+  }
+
+  /**
+   * Returns the number of elements in {@code strings}. Written with a generic local variable so
+   * that the compiled method has a LocalVariableTypeTable.
+   *
+   * @param strings the strings to count
+   * @return the number of elements in {@code strings}
+   */
+  public static int countStrings(List<String> strings) {
+    List<String> copy = new ArrayList<>(strings);
+    return copy.size();
   }
 
   /**
