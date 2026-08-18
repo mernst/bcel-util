@@ -3,6 +3,8 @@ package org.plumelib.bcelutil;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.plumelib.bcelutil.Fixtures.code;
@@ -16,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.bcel.Const;
 import org.apache.bcel.classfile.Attribute;
+import org.apache.bcel.classfile.Code;
+import org.apache.bcel.classfile.LocalVariableTypeTable;
 import org.apache.bcel.classfile.Method;
 import org.apache.bcel.generic.ArrayType;
 import org.apache.bcel.generic.ClassGen;
@@ -518,15 +522,39 @@ final class BcelUtilTest {
   }
 
   @Test
-  void removeLocalVariableTypeTablesLeavesOtherAttributes() {
-    MethodGen mg = methodGen("sum");
-    int before = mg.getCodeAttributes().length;
+  void removeLocalVariableTypeTablesRemovesTheTable() {
+    MethodGen mg = methodGen("countStrings");
+    // If this fails, the fixture method no longer has a LocalVariableTypeTable, and the rest of
+    // this test would vacuously pass.
+    assertNotNull(mg.getLocalVariableTypeTable());
+
     BcelUtil.removeLocalVariableTypeTables(mg);
+
+    assertNull(mg.getLocalVariableTypeTable());
+    // MethodGen re-emits the LocalVariableTypeTable that it holds in a field, so check the
+    // generated method rather than only the MethodGen.
+    Code code = nonNull(mg.getMethod().getCode(), "Code attribute of countStrings");
+    for (Attribute a : code.getAttributes()) {
+      assertFalse(a instanceof LocalVariableTypeTable);
+    }
+  }
+
+  @Test
+  void removeLocalVariableTypeTablesLeavesOtherAttributes() {
+    MethodGen mg = methodGen("countStrings");
+    // MethodGen holds the LocalVariableTypeTable in a field of its own rather than as a code
+    // attribute, so add one as a code attribute in order to test removal from the code attributes.
+    mg.addCodeAttribute(nonNull(mg.getLocalVariableTypeTable(), "LocalVariableTypeTable"));
+    mg.addCodeAttribute(mg.getLineNumberTable(mg.getConstantPool()));
+    int before = mg.getCodeAttributes().length;
+
+    BcelUtil.removeLocalVariableTypeTables(mg);
+
     for (Attribute a : mg.getCodeAttributes()) {
       assertFalse(BcelUtil.isLocalVariableTypeTable(a, mg.getConstantPool()));
     }
-    // sum uses no type variables, so it has no LocalVariableTypeTable to remove.
-    assertEquals(before, mg.getCodeAttributes().length);
+    // Exactly one attribute, the LocalVariableTypeTable, was removed.
+    assertEquals(before - 1, mg.getCodeAttributes().length);
   }
 
   // Dumping

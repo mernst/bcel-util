@@ -14,6 +14,7 @@ import org.apache.bcel.classfile.ConstantUtf8;
 import org.apache.bcel.classfile.Field;
 import org.apache.bcel.classfile.JavaClass;
 import org.apache.bcel.classfile.Method;
+import org.apache.bcel.classfile.StackMap;
 import org.apache.bcel.generic.ArrayType;
 import org.apache.bcel.generic.ClassGen;
 import org.apache.bcel.generic.CodeExceptionGen;
@@ -298,12 +299,16 @@ public final class BcelUtil {
   /**
    * Returns true if the specified attribute is a stack map table.
    *
+   * <p>A stack map table is written under the name "StackMapTable", or, in class files that predate
+   * Java 6, under the name "StackMap". BCEL parses both into {@link StackMap}, so this method tests
+   * the attribute's type rather than its name.
+   *
    * @param a the attribute
-   * @param pool the constant pool
+   * @param pool the constant pool; unused
    * @return true iff the attribute is a stack map table
    */
   public static boolean isStackMapTable(Attribute a, ConstantPoolGen pool) {
-    return attributeNameToString(a, pool).equals("StackMapTable");
+    return a instanceof StackMap;
   }
 
   /**
@@ -620,9 +625,8 @@ public final class BcelUtil {
     mg.removeExceptionHandlers();
     mg.removeLineNumbers();
     mg.removeLocalVariables();
-    // The LocalVariableTypeTable is not a code attribute of the MethodGen; MethodGen stores it in
-    // a field of its own and re-emits it unchanged, so removeLocalVariables() does not remove it.
-    mg.removeLocalVariableTypeTable();
+    // removeLocalVariables() does not remove the LocalVariableTypeTable.
+    removeLocalVariableTypeTables(mg);
     // The StackMapTable describes the instructions that were just discarded.
     removeStackMapTable(mg);
     mg.setMaxLocals();
@@ -638,6 +642,11 @@ public final class BcelUtil {
    */
   public static void removeLocalVariableTypeTables(MethodGen mg) {
 
+    // The LocalVariableTypeTable is not a code attribute of the MethodGen; MethodGen stores it in
+    // a field of its own and re-emits it unchanged.
+    mg.removeLocalVariableTypeTable();
+
+    // A LocalVariableTypeTable is a code attribute only if a client added it as one.
     for (Attribute a : mg.getCodeAttributes()) {
       if (isLocalVariableTypeTable(a, mg.getConstantPool())) {
         mg.removeCodeAttribute(a);
